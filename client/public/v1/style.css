@@ -241,11 +241,14 @@ td.text {
     box-shadow: none !important;
     border-radius: 0 !important;
     page-break-after: always !important;
+    break-after: page !important;
     page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
-  .patient-report-item {
+  .patient-report-item:not(:last-child) {
     page-break-after: always !important;
+    break-after: page !important;
   }
 }
 

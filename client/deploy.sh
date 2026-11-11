@@ -57,7 +57,9 @@ if [ -x "$GET_SECRET_HELPER" ]; then
   SM_HOST=$("$GET_SECRET_HELPER" DTC_GENE_SFTP_HOST 2>/dev/null || true)
   if [ -n "$SM_HOST" ]; then
     REMOTE_HOST="${SM_HOST%%:*}"
-    REMOTE_PORT="${SM_HOST##*:}"
+    if [[ "$SM_HOST" == *:* ]]; then
+      REMOTE_PORT="${SM_HOST##*:}"
+    fi
   fi
   SM_USER=$("$GET_SECRET_HELPER" DTC_GENE_SFTP_USER 2>/dev/null || true)
   if [ -n "$SM_USER" ]; then
@@ -71,7 +73,7 @@ if [ -z "$REMOTE_PASS" ] || [ -z "$REMOTE_HOST" ]; then
 fi
 
 REMOTE_PROTO="${REMOTE_PROTO:-sftp}"
-REMOTE_PORT="${REMOTE_PORT:-22}"
+REMOTE_PORT="${REMOTE_PORT:-22022}"
 REMOTE_DIR="${REMOTE_DIR:-/var/www/html/view}"
 
 # 2. Check dist directory

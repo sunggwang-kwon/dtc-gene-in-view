@@ -26,6 +26,12 @@ module.exports = defineConfig({
       return args;
     });
   },
+  // Webpack 5 + vue-loader 15 scoped CSS export 경고 필터링
+  configureWebpack: {
+    ignoreWarnings: [
+      /export 'default' \(imported as 'style0'\) was not found in/
+    ]
+  },
   // 프록시 설정 (로컬 개발용)
   devServer: {
     proxy: {

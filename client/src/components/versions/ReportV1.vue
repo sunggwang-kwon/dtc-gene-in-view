@@ -24,7 +24,7 @@
       <!-- 환자별 리포트 루프 -->
       <div
         v-for="(result, pIdx) in result_list"
-        :key="pIdx"
+        :key="result.patient_id || pIdx"
         class="patient-report-item"
       >
         <!-- ============================================================== -->
@@ -94,7 +94,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(sumItem, sIdx) in result.summary.slice(0, 10)" :key="sIdx">
+                <tr v-for="(sumItem, sIdx) in result.summary.slice(0, 10)" :key="sumItem.test_type_id || sIdx">
                   <td>{{ sumItem.type_name || sumItem.type_id }}</td>
                   <td class="text">{{ sumItem.test_type_name || sumItem.test_type_id }}</td>
                   <td>
@@ -170,10 +170,10 @@ export default {
   },
   methods: {
     /**
-     * 공식 로고 에셋 경로 반환
+     * 공식 로고 에셋 경로 반환 (서브디렉터리 접근 시에도 상대경로 깨짐 방지)
      */
     getLogoSrc() {
-      return './common/images/geni-in-logo.svg';
+      return this.normalizeAssetPath('./common/images/geni-in-logo.svg');
     },
 
     /**
@@ -182,7 +182,7 @@ export default {
     getImg(path) {
       if (!path) return '';
       const clean = path.replace(/^(\.\/)?images\//, '');
-      return `${this.imageBaseUrl}${clean}`;
+      return this.normalizeAssetPath(`${this.imageBaseUrl}${clean}`);
     }
   }
 };

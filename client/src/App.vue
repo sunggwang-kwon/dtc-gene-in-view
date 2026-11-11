@@ -45,7 +45,8 @@
 import {
   DEFAULT_VERSION,
   resolveVersionFromSeq,
-  getVersionConfig
+  getVersionConfig,
+  normalizeAssetPath
 } from '@/config/versionConfig';
 
 export default {
@@ -139,16 +140,25 @@ export default {
 
     /**
      * UTF-8 한글 및 특수문자 안전 Base64 디코더
+     * (URLSearchParams에 의한 '+' -> 공백 치환 자동 복원 및 TextDecoder 적용)
      */
     safeBase64Decode(encodedStr) {
-      const cleanStr = encodedStr.replace(/%22/g, '"');
+      if (!encodedStr) {
+        throw new Error('데이터 파라미터가 비어 있습니다.');
+      }
+      const cleanStr = encodedStr.replace(/ /g, '+').replace(/%22/g, '"');
       try {
-        const decoded = atob(cleanStr);
-        // UTF-8 멀티바이트 문자열 처리
+        const binary = atob(cleanStr);
+        // UTF-8 멀티바이트 문자열 처리 (TextDecoder 지원 환경 우선)
         try {
-          return JSON.parse(decodeURIComponent(escape(decoded)));
+          const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+          return JSON.parse(new TextDecoder().decode(bytes));
         } catch (e) {
-          return JSON.parse(decoded);
+          try {
+            return JSON.parse(decodeURIComponent(escape(binary)));
+          } catch (e2) {
+            return JSON.parse(binary);
+          }
         }
       } catch (err) {
         throw new Error(`Base64 데이터 디코딩에 실패했습니다 (${err.message})`);
@@ -157,10 +167,10 @@ export default {
 
     /**
      * 버전 자동 판별
-     * 1순위: URL 경로 (/eng/v1/, /v6/, /v5/ 등)
+     * 1순위: URL 경로 (/eng/v1/, /v1/, /viewer/ 등)
      * 2순위: 쿼리스트링 ?version=...
      * 3순위: 디코딩된 data.template_version (seq 번호 매핑)
-     * 기본값: DEFAULT_VERSION ('v6')
+     * 기본값: DEFAULT_VERSION ('v1')
      */
     detectVersion(decodedData) {
       const pathname = window.location.pathname.toLowerCase();
@@ -174,7 +184,11 @@ export default {
       // 1순위: 단일 경로 세그먼트 분석
       const segments = pathname.split('/').filter(Boolean);
       for (const seg of segments) {
-        if (/^(v\d+|viewer)$/i.test(seg)) {
+        if (/^viewer$/i.test(seg)) {
+          this.version = DEFAULT_VERSION;
+          return;
+        }
+        if (/^v\d+$/i.test(seg)) {
           this.version = seg.toLowerCase();
           return;
         }
@@ -184,7 +198,8 @@ export default {
       const params = new URLSearchParams(window.location.search);
       const queryVer = params.get('version');
       if (queryVer) {
-        this.version = queryVer.toLowerCase();
+        const lowerVer = queryVer.toLowerCase();
+        this.version = lowerVer === 'viewer' ? DEFAULT_VERSION : lowerVer;
         return;
       }
 
@@ -213,18 +228,7 @@ export default {
      * 에셋 상대경로 정규화 (서브디렉터리 URL 접근 시 상대경로 꼬임 방지)
      */
     normalizeAssetPath(relativePath) {
-      if (!relativePath) return '';
-      if (/^(https?:)?\/\//i.test(relativePath)) return relativePath;
-
-      // 현재 문서가 위치한 디렉터리 기준 베이스 URL 계산
-      let baseDir = window.location.pathname;
-      if (!baseDir.endsWith('/')) {
-        baseDir = baseDir.substring(0, baseDir.lastIndexOf('/') + 1);
-      }
-
-      // './' 제거 후 결합
-      const cleanRelative = relativePath.replace(/^\.\//, '');
-      return `${baseDir}${cleanRelative}`;
+      return normalizeAssetPath(relativePath);
     },
 
     /**

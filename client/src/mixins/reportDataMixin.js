@@ -5,7 +5,10 @@
  * - 버전별 컴포넌트는 이 믹스인을 주입받아 result_list를 바로 템플릿에 바인딩합니다.
  */
 
-import { getVersionConfig } from '@/config/versionConfig';
+import { getVersionConfig, normalizeAssetPath } from '@/config/versionConfig';
+
+// 관련 유전자 마스터 데이터 메모리 캐시 (동일 세션 내 중복 API 요청 방지)
+const relatedGeneCache = new Map();
 
 export default {
   props: {
@@ -26,7 +29,8 @@ export default {
       data_error_message: '',
       result_list: [],
       langCd: config.langCd || 'kor',
-      imageBaseUrl: config.imageBaseUrl || './v1/images/'
+      imageBaseUrl: config.imageBaseUrl || './v1/images/',
+      printHandler: null
     };
   },
   computed: {
@@ -42,6 +46,12 @@ export default {
   },
   mounted() {
     this.registerPrintHandler();
+  },
+  beforeDestroy() {
+    if (this.printHandler) {
+      window.removeEventListener('beforeprint', this.printHandler);
+      this.printHandler = null;
+    }
   },
   methods: {
     /**
@@ -69,11 +79,11 @@ export default {
      * 인쇄 시 서버에 출력 여부 전송 (set_print_yn.php)
      */
     registerPrintHandler() {
-      window.onbeforeprint = () => {
+      this.printHandler = () => {
         if (!Array.isArray(this.result_list)) return;
         this.result_list.forEach((element) => {
-          if (!element.patient_id || !element.request_date) return;
-          const cleanDate = element.request_date
+          if (!element.patient_id || (!element.raw_request_date && !element.request_date)) return;
+          const cleanDate = element.raw_request_date || element.request_date
             .replace(/년\s?|월\s?/g, '-')
             .replace('일', '')
             .trim();
@@ -92,10 +102,11 @@ export default {
           });
         });
       };
+      window.addEventListener('beforeprint', this.printHandler);
     },
 
     /**
-     * 전체 환자 목록에 대해 병렬 데이터 조회
+     * 전체 환자 목록에 대해 병렬 데이터 조회 (개별 환자 에러 격리 처리)
      */
     async fetchResultData() {
       this.is_data_loading = true;
@@ -103,12 +114,28 @@ export default {
       this.result_list = [];
 
       try {
-        const resultPromises = this.param.map(({ patient_id, request_date }) =>
-          this.buildResultItem(patient_id, request_date)
-        );
+        const resultPromises = this.param.map(async ({ patient_id, request_date }) => {
+          try {
+            return await this.buildResultItem(patient_id, request_date);
+          } catch (itemError) {
+            console.error(`[환자 ${patient_id} 결과 데이터 로드 실패]:`, itemError);
+            return {
+              patient_id,
+              request_date,
+              is_error: true,
+              error_message: itemError.message || '데이터를 불러오는 중 오류가 발생했습니다.'
+            };
+          }
+        });
 
         const results = await Promise.all(resultPromises);
-        this.result_list = results;
+        const validResults = results.filter((item) => !item.is_error);
+
+        if (validResults.length === 0 && results.length > 0) {
+          throw new Error(results[0].error_message || '결과 데이터를 불러올 수 없습니다.');
+        }
+
+        this.result_list = validResults;
       } catch (error) {
         console.error('[결과 데이터 로드 오류]:', error);
         this.is_data_error = true;
@@ -172,6 +199,7 @@ export default {
       result_item.gender = baseInfo.gender;
       result_item.age = baseInfo.age;
       result_item.birth_date = baseInfo.birth_date;
+      result_item.raw_request_date = baseInfo.request_date;
       result_item.request_date = this.to_date_string(baseInfo.request_date);
       result_item.collect_date = this.to_date_string(baseInfo.collect_date);
       result_item.report_date = this.to_date_string(baseInfo.report_date);
@@ -321,15 +349,41 @@ export default {
     },
 
     get_result_related_gene(test_type_id) {
+      const cacheKey = `${this.langCd}_${test_type_id}`;
+      if (relatedGeneCache.has(cacheKey)) {
+        return relatedGeneCache.get(cacheKey);
+      }
+
       const url = this.langCd === 'eng'
         ? '/result/get_result_related_gene.php?lang_cd=eng'
         : '/result/get_result_related_gene.php';
-      return this.apiRequest(url, { test_type_id });
+
+      const reqPromise = this.apiRequest(url, { test_type_id })
+        .then((res) => {
+          if (!res) {
+            relatedGeneCache.delete(cacheKey);
+          }
+          return res;
+        })
+        .catch((err) => {
+          relatedGeneCache.delete(cacheKey);
+          throw err;
+        });
+
+      relatedGeneCache.set(cacheKey, reqPromise);
+      return reqPromise;
     },
 
     // ==========================================
     // 헬퍼 유틸리티 메서드
     // ==========================================
+
+    /**
+     * 에셋 경로 정규화 (서브디렉터리 호환)
+     */
+    normalizeAssetPath(relativePath) {
+      return normalizeAssetPath(relativePath);
+    },
 
     to_date_string(date) {
       if (!date) return '';

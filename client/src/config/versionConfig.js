@@ -34,6 +34,9 @@ export const VERSION_CONFIG = {
   }
 };
 
+// 레거시 URL 호환용 alias 등록 (/viewer 경로 접근 지원)
+VERSION_CONFIG.viewer = VERSION_CONFIG.v1;
+
 /**
  * 백엔드 lims_template 테이블의 seq 번호와 버전 식별자 매핑
  */
@@ -61,4 +64,22 @@ export function resolveVersionFromSeq(seq) {
 export function getVersionConfig(version) {
   const key = (version || '').toLowerCase();
   return VERSION_CONFIG[key] || VERSION_CONFIG[DEFAULT_VERSION];
+}
+
+/**
+ * 에셋 상대경로 정규화 (서브디렉터리 URL 접근 시 슬래시 유무에 따른 상대경로 깨짐 방지)
+ */
+export function normalizeAssetPath(relativePath) {
+  if (!relativePath) return '';
+  if (/^(https?:)?\/\//i.test(relativePath)) return relativePath;
+
+  // 현재 브라우저 문서가 위치한 디렉터리 기준 베이스 URL 계산
+  let baseDir = window.location.pathname;
+  if (!baseDir.endsWith('/')) {
+    baseDir = baseDir.substring(0, baseDir.lastIndexOf('/') + 1);
+  }
+
+  // './' 제거 후 결합
+  const cleanRelative = relativePath.replace(/^\.\//, '');
+  return `${baseDir}${cleanRelative}`;
 }
